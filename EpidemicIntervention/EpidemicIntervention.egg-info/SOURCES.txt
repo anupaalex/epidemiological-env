@@ -1,0 +1,7 @@
+README.md
+setup.py
+EpidemicIntervention.egg-info/PKG-INFO
+EpidemicIntervention.egg-info/SOURCES.txt
+EpidemicIntervention.egg-info/dependency_links.txt
+EpidemicIntervention.egg-info/requires.txt
+EpidemicIntervention.egg-info/top_level.txt
