@@ -16,17 +16,12 @@ df['Date_new'] = pd.to_datetime(df['Date'], format='%d-%m-%Y')
 df = df.sort_values('Date_new')
 env = gym.make('EpidemicIntervention:epidemic-intervention-v0')
 
-#df['Infected'].values[:] = 0
-#df['Susceptible'].values[0] = 1
-#df['Susceptible'].values[1:] = 0
-#df['Recovered'].values[:] = 0
-# The algorithms require a vectorized environment to run
 '''
 env = DummyVecEnv([lambda: EpidemicInterventionEnv(df)])
 '''
 
 model = PPO2(MlpPolicy, env, verbose=1)
-model.learn(total_timesteps=250)
+model.learn(total_timesteps=1000)
 
 obs = env.reset()
 action_values =set()

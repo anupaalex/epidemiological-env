@@ -21,7 +21,7 @@ MAX_NUM_INTERVENTIONS = 100
 INITIAL_ACCOUNT_BALANCE = 100
 #INIT_AREA_UNDER_CURVE=100000
 TOTAL_POPULATION = 100000
-
+MAX_INTERVENTIONS = 10
 #INITIAL_ACCOUNT_BALANCE = 10000
 
 
@@ -52,12 +52,14 @@ class EpidemicInterventionEnv(gym.Env):
         self.ppl_intervened=0
         self.total_intervened_ppl = 0
         self.total_interventions = 0
+
         self.current_step = 0
         self.start_time = -1
         self.end_time = -1
         self.start_outside_intervention = 0
         self.intervention_started = False
         self.intervention_list =[]
+        self.max_intervention_reached = False
         # Prices contains the OHCL values for the last five prices
         self.observation_space = spaces.Box(
             low=0, high=1, shape=(4, 7), dtype=np.float16)
@@ -78,14 +80,23 @@ class EpidemicInterventionEnv(gym.Env):
         ])
         
         # Append additional data and scale each value to between 0-1
-        obs = np.append(frame, [[
+        '''obs = np.append(frame, [[
             self.balance / MAX_ACCOUNT_BALANCE,
             self.ppl_intervened/100 ,
             self.beta,
             self.gamma,
             self.cost_basis / MAX_INTERVENTION_COST,
-            self.total_intervened_ppl / 100,
+            self.total_interventions / MAX_INTERVENTIONS,
             self.total_intervention_cost / (MAX_NUM_INTERVENTIONS * MAX_INTERVENTION_COST)
+        ]], axis=0)'''
+        obs = np.append(frame, [[
+            self.total_interventions / MAX_INTERVENTIONS,
+            self.total_interventions / MAX_INTERVENTIONS,
+            self.beta,
+            self.gamma,
+            self.total_interventions / MAX_INTERVENTIONS,
+            self.total_interventions / MAX_INTERVENTIONS,
+            self.total_interventions / MAX_INTERVENTIONS,
         ]], axis=0)
         print("returning obs")
         return obs
@@ -106,7 +117,7 @@ class EpidemicInterventionEnv(gym.Env):
         action_type = action[0]
         amount = action[1]
 
-        if action_type >1:
+        if action_type >1 and self.total_interventions < MAX_INTERVENTIONS:
             print("1*********start intervention")
             #for before
 
@@ -141,7 +152,7 @@ class EpidemicInterventionEnv(gym.Env):
 
             total_possible = self.balance/current_cost
             ppl_intervened_new = total_possible * amount
-            self.old_beta = self.beta
+            
             
             prev_cost = self.cost_basis * self.ppl_intervened
             additional_cost = ppl_intervened_new * current_cost
@@ -152,8 +163,9 @@ class EpidemicInterventionEnv(gym.Env):
             self.ppl_intervened += ppl_intervened_new
             #self.total_interventions +=1
             if self.start_time==-1:
-                self.total_interventions +=1
-                self.beta = self.beta - (0.005)
+                self.old_beta = self.beta
+                
+                self.beta = self.beta - (0.02)
                 self.intervention_started = True
                 self.start_time = self.current_step
         elif action_type >0.5:
@@ -202,9 +214,39 @@ class EpidemicInterventionEnv(gym.Env):
                 self.start_time =-1
                 self.start_outside_intervention = self.current_step+1
                 self.intervention_started = False
+                self.beta = self.old_beta
+                self.total_interventions +=1
         else:
             print("no action")
             print("********************************************************")
+
+        if self.total_interventions==MAX_INTERVENTIONS and not self.max_intervention_reached:
+            print("setting rest to old val************&************")
+            self.max_intervention_reached = True
+            t_range = np.arange(self.current_step, len(self.df['Susceptible']), 1.0)
+            S0 = self.df.loc[self.current_step, "Susceptible"]
+            I0 = self.df.loc[self.current_step, "Infected"]
+            R0 = self.df.loc[self.current_step, "Recovered"]
+            INPUT = (S0, I0, R0)
+            print(INPUT)
+            self.beta_to_use = self.beta
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!interven Diff eq***************************** current step == %d beta = %f start = %d S,I,R =(%f,%f,%f)"%(self.current_step,self.beta_to_use,self.current_step,S0,I0,R0))
+            RES = spi.odeint(self.diff_eqs,INPUT,t_range)
+            print(RES)
+            susceptible_list = []
+            infected_list = []
+            recovered_list = []
+            for item in RES:
+                susceptible_list.append(item[0])
+                infected_list.append(item[1])
+                recovered_list.append(item[2])
+            print("len list", len(susceptible_list))
+            if len(infected_list) >0:
+                self.df.loc[self.current_step: len(self.df['Susceptible'])-1, 'Susceptible'] = susceptible_list
+                self.df.loc[self.current_step: len(self.df['Susceptible'])-1, 'Infected'] = infected_list
+                self.df.loc[self.current_step: len(self.df['Susceptible'])-1, 'Recovered'] = recovered_list
+
+
             
         if self.ppl_intervened == 0:
             self.cost_basis = 0
@@ -251,7 +293,7 @@ class EpidemicInterventionEnv(gym.Env):
         #self.total_intervention_value = 0
         #self.ppl_intervened=0
         #self.balance = INITIAL_ACCOUNT_BALANCE
-        # Set the current step to a random point within the data frame
+        #Set the current step to a random point within the data frame
         #self.current_step = random.randint(
         #    0, len(self.df.loc[:, 'Susceptible'].values) - 8)
         self.total_interventions=0
@@ -261,6 +303,7 @@ class EpidemicInterventionEnv(gym.Env):
         self.start_outside_intervention = 0
         self.intervention_started = False
         self.intervention_list=[]
+        self.max_intervention_reached = False
         #print("current_step======",self.current_step)
         return self._next_observation()
 
