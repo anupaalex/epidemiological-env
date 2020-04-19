@@ -118,6 +118,7 @@ for i in range(250):
     env.reset()
     obs, rewards, done, info = env.step(action)
     if done == True:
+    	break
     	env.reset
     #ret_df = env.render()
     #action_values.add(action[0][0])
