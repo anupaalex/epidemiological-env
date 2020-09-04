@@ -25,13 +25,14 @@ INIT_PEAK  = 0
 INIT_PEAK_DAY = 0
 
 PRINT = False
+PRINT2 = False
 MAX_COST_OF_INTERVENTION = 1
 MAX_COST_OF_START_INTERVENTION = 1
 GAIN_FROM_INTERVENTION_PER_UNIT = 1
 TOTAL_POPULATION = 100000
 MAX_INTERVENTIONS = 1
 MAX_INTERVENTION_DAYS = 10
-INTERVENTION_DAYS = 10
+INTERVENTION_DAYS = 20
 class EpidemicInterventionEnv(gym.Env):
     """A stock trading environment for OpenAI gym"""
     metadata = {'render.modes': ['human']}
@@ -41,22 +42,25 @@ class EpidemicInterventionEnv(gym.Env):
         if PRINT:
             print("Init")
         #Loading dataframe
+        self.cumulative_infected_cost = 0
+        self.cumulative_reward = 0
         self.df = pd.read_csv('./data/epidemic_2.csv')
         self.df['Date_new'] = pd.to_datetime(self.df['Date'], format='%d-%m-%Y')
         self.df = self.df.sort_values('Date_new')
         self.initial_df = self.df.copy()
         self.gain = 0
-        self.continuous = True #continuos action space or not
+        self.continuous = False #continuos action space or not
         self.beta_const = True #if change in beta should be const
-        
+        self.action_step=10000
         if self.continuous:
             self.action_space = spaces.Box(low=0, high=1, shape=(2,), dtype=np.float32)
+            self.observation_space = spaces.Box(low=0, high=250, shape=(5,), dtype=np.float32)
         else:
-            self.action_space = spaces.Discrete(4)
-
-        self.observation_space = spaces.Box(
-            low=0, high=1, shape=(4, 7), dtype=np.float16)
-        
+            self.action_space = spaces.Discrete(2)
+            self.observation_space = spaces.Discrete(5)
+        #self.observation_space = spaces.Box(
+         #   low=0, high=1, shape=(4, 7), dtype=np.float16)
+        #self.observation_space = spaces.Box(low=0, high=250, shape=(5,), dtype=np.float32)
         self.balance = INIT_ACCOUNT_BALANCE
         self.beta=0.1
         self.gamma=0.05
@@ -75,7 +79,7 @@ class EpidemicInterventionEnv(gym.Env):
         self.max_intervention_reached = False
 
         # Prices contains the OHCL values for the last five prices
-        
+        self.start =-1
         
         global INIT_AREA_UNDER_CURVE
         global INIT_PEAK
@@ -93,28 +97,39 @@ class EpidemicInterventionEnv(gym.Env):
         
 
     def _next_observation(self):
+        
+
+        if self.df['Infected'][self.current_step]>self.df['Infected'][self.current_step+1]:
+            slope_of_curve=-1
+        else:
+            slope_of_curve=1
+
+        obs = [self.df['Susceptible'][self.current_step],self.df['Infected'][self.current_step],self.df['Recovered'][self.current_step],self.current_step,slope_of_curve]
+
+        '''
         # Get the stock data points for the last 5 days and scale to between 0-1
         frame = np.array([
             self.df.loc[self.current_step: self.current_step +
-                        6, 'Susceptible'].values/ TOTAL_POPULATION,
+                        6, 'Susceptible'].values,
             self.df.loc[self.current_step: self.current_step +
-                        6, 'Infected'].values/ TOTAL_POPULATION,
+                        6, 'Infected'].values,
             self.df.loc[self.current_step: self.current_step +
-                        6, 'Recovered'].values/ TOTAL_POPULATION 
+                        6, 'Recovered'].values
 
         ])
-        
+        #binary saying upward or downward
         obs = np.append(frame, [[
             self.current_step,
-            self.current_step,
+            self.cumulative_infected_cost/sum(self.df['Infected']),
             self.beta,
             self.gamma,
-            self.total_interventions / MAX_INTERVENTIONS,
-            self.total_interventions / MAX_INTERVENTIONS,
+            self.current_step,
+            self.current_step,
             self.total_interventions / MAX_INTERVENTIONS,
         ]], axis=0)
         if PRINT:#
             print("returning obs")
+        '''
         return obs
     def diff_eqs(self,INP,t):  
         
@@ -182,15 +197,17 @@ class EpidemicInterventionEnv(gym.Env):
         #from begining to start of intervention
         if PRINT:
             print("From beg to %d"%(self.start_time_calc))
-        infected_list.extend(self.df['Infected'][:self.start_time-1])
+        infected_list.extend(self.df['Infected'][:self.start_time])
         #from start to how long th intervention is
         #t_range = np.arange(self.start_time_calc,min(self.start_time+MAX_INTERVENTION_DAYS,len(self.df))+1 , 1.0)
-        print("start calc = %d curr +1 %d "%(self.start_time,self.current_step+1))
+        if  PRINT:
+            print("start calc = %d curr +1 %d "%(self.start_time,self.current_step+1))
         t_range = np.arange(self.start_time,self.current_step+1, 1.0)
         S0 = self.df.loc[self.start_time, "Susceptible"]
         I0 = self.df.loc[self.start_time, "Infected"]
         R0 = self.df.loc[self.start_time, "Recovered"]
-        print("len1:",len(self.df['Infected'][:self.start_time]))
+        if  PRINT:
+            print("len1:",len(infected_list))
         INPUT = (S0, I0, R0)
         self.beta_to_use = self.lower_beta
         if PRINT:
@@ -198,7 +215,8 @@ class EpidemicInterventionEnv(gym.Env):
         RES = spi.odeint(self.diff_eqs,INPUT,t_range)
         for item in RES:
             infected_list.append(item[1])
-        print("len2:",len(RES))
+        if  PRINT:
+            print("len2:",len(infected_list))
         #from end of intervention to end 
        
         #t_range = np.arange(min(self.start_time+MAX_INTERVENTION_DAYS+1,len(self.df))+1 ,len(self.df)+1, 1.0)
@@ -211,11 +229,12 @@ class EpidemicInterventionEnv(gym.Env):
         INPUT = (RES[-1][0], RES[-1][1], RES[-1][2])
         self.beta_to_use = self.old_beta
         RES = spi.odeint(self.diff_eqs,INPUT,t_range)
-        print("len3:",len(RES))
+        
         for item in RES:
             infected_list.append(item[1])
-        
-        if not PRINT:
+            if  PRINT:
+                print("len3:",len(infected_list))
+        if  PRINT:
             print(len(infected_list))
 
         return infected_list
@@ -237,10 +256,14 @@ class EpidemicInterventionEnv(gym.Env):
         return peak,peak_day
 
     def cost_start_intervention(self):
-        if self.start_time ==self.current_step:
+        if self.start_time ==self.current_step and self.current_step<50:
             #cost = (self.total_interventions+1/MAX_INTERVENTIONS) * MAX_COST_OF_START_INTERVENTION
             #cost = (MAX_INTERVENTIONS/self.total_interventions) * MAX_COST_OF_START_INTERVENTION
-            cost = 10
+            cost = 100000
+        elif self.start_time ==self.current_step and self.current_step>=50:
+            #cost = (self.total_interventions+1/MAX_INTERVENTIONS) * MAX_COST_OF_START_INTERVENTION
+            #cost = (MAX_INTERVENTIONS/self.total_interventions) * MAX_COST_OF_START_INTERVENTION
+            cost = 100  
         else:
             cost = 0
         if PRINT:
@@ -262,19 +285,22 @@ class EpidemicInterventionEnv(gym.Env):
     def gain_from_intervention(self):
         if self.start_time!=-1 and self.start_time<=self.current_step:
             #if self.start_time!=-1:
+
             area_under_curve = self.area_under_curve2()
             min_area,min_peak,max_peak_day = self.get_min_area_under_curve_peak_peak_day()
             max_area_under_curve_diff = INIT_AREA_UNDER_CURVE - min_area
-            area_gain = ((INIT_AREA_UNDER_CURVE - area_under_curve)/max_area_under_curve_diff) * GAIN_FROM_INTERVENTION_PER_UNIT
-
+            #area_gain = ((INIT_AREA_UNDER_CURVE - area_under_curve)/max_area_under_curve_diff) * GAIN_FROM_INTERVENTION_PER_UNIT
+            area_gain = INIT_AREA_UNDER_CURVE - area_under_curve
             peak,peak_day = self.peak_and_peak_day()
             peak_gain = (INIT_PEAK - peak) /(INIT_PEAK-min_peak)
             #peak_day_gain = (peak_day - INIT_PEAK_DAY)/(max_peak_day-INIT_PEAK_DAY)
             peak_day_gain = (peak_day - INIT_PEAK_DAY)
-            print("All max area =%f peak =%f peak day = %f "%(min_area,INIT_PEAK-min_peak,max_peak_day-INIT_PEAK_DAY))
-            print("All actual area =%f peak =%f peak day = %f"%(INIT_AREA_UNDER_CURVE - area_under_curve,INIT_PEAK - peak, peak_day - INIT_PEAK_DAY))
-            print("***************Gains : area =%f peak =%f peak day = %f"%(area_gain,peak_gain,peak_day_gain))
-            gain = 0*area_gain + 0*peak_gain + peak_day_gain
+            if PRINT:
+                print("All max area =%f peak =%f peak day = %f "%(min_area,INIT_PEAK-min_peak,max_peak_day-INIT_PEAK_DAY))
+                print("init peak=%f peak day = %f"%(INIT_PEAK_DAY,peak_day))
+                print("All actual area =%f peak =%f peak day = %f"%(INIT_AREA_UNDER_CURVE - area_under_curve,INIT_PEAK - peak, peak_day - INIT_PEAK_DAY))
+                print("***************Gains : area =%f peak =%f peak day = %f"%(area_gain,peak_gain,peak_day_gain))
+            gain = 1*area_gain + 0*peak_gain + 0*peak_day_gain
         else:
             gain = 0
         if PRINT:
@@ -282,20 +308,26 @@ class EpidemicInterventionEnv(gym.Env):
         return gain
 
 
+    def set_action_step(self,i):
+        self.action_step =i
+        print("Action step = ",self.action_step)
 
     def _take_action(self, action):
         self.stopped = False
-
-        print(action)
+        if  PRINT2:
+            print(action)
         current_cost = self.df.loc[self.current_step, "Infected"] * self.beta 
         if PRINT:#
             print("current step, price",self.current_step,current_cost)
-        
-        action_type = action[0]
-        beta_percent_red = action[1]
-        if action_type <0.5 and self.total_interventions < MAX_INTERVENTIONS :
-            if not PRINT:#
-                print("1*********start intervention")
+        if self.continuous:
+            action_type = action[0]
+            beta_percent_red = action[1]
+        else:
+            action_type = action
+        if (self.continuous and action_type >0.8 and self.total_interventions < MAX_INTERVENTIONS) or (not self.continuous and action_type ==1 and self.total_interventions < MAX_INTERVENTIONS) :
+        #if self.current_step==self.action_step:
+            if  PRINT2:#
+                print("1*********start intervention %d"%(self.current_step))
             
 
             #for before the intervention starts
@@ -340,11 +372,13 @@ class EpidemicInterventionEnv(gym.Env):
                 self.intervention_started = True
                 self.start_time = self.current_step
                 self.intervention_list.append((self.start_time))
-        else:
-            if not PRINT:
+                self.start = self.start_time
+        elif (self.continuous and action_type <=0.8 and self.total_interventions < MAX_INTERVENTIONS) or (not self.continuous and action_type ==0 ) :
+        
+            if  PRINT2:
                 print("no action")
         if self.start_time!=-1 and self.current_step == self.start_time+INTERVENTION_DAYS:
-            if not PRINT:#
+            if  PRINT2:#
                 print("2*********stop intervention")
 
             #to be considered later
@@ -453,6 +487,7 @@ class EpidemicInterventionEnv(gym.Env):
                     self.df.loc[self.start_time: len(self.df['Susceptible'])-1, 'Recovered'] = recovered_list
             if PRINT:#
                 print("Setting current step back")
+            self.total_interventions+=1
             self.current_step = random.randint(
             0, len(self.df.loc[:, 'Susceptible'].values) - 8)
 
@@ -465,10 +500,12 @@ class EpidemicInterventionEnv(gym.Env):
                 print("Setting current step back")
             self.current_step = 0
             done = True
-            print(self.intervention_list)
+            if PRINT:#
+                print(self.intervention_list)
             new_peak_day = list(self.df['Infected']).index(max(list(self.df['Infected'])))
             reward_finish = new_peak_day - INIT_PEAK_DAY 
-            print("Finish reward",reward_finish)
+            if PRINT:#
+                print("Finish reward",reward_finish)
 
 
 
@@ -477,21 +514,36 @@ class EpidemicInterventionEnv(gym.Env):
         cost_intervention = self.cost_of_intervention()
         cost_start = self.cost_start_intervention()
         gain_intervention = self.gain_from_intervention()
+        cost_of_infected = self.get_cost_of_infected()
         WCI=1
         WCS=1
-        WG=1
-        WRF=0
-        reward = -(WCI*cost_intervention + WCS*cost_start - WG*gain_intervention - WRF* reward_finish) 
-
+        WG=0
+        WRF=1
+        WI = 1
+        
+        reward = -(WI*cost_of_infected+WCI*cost_intervention + WCS*cost_start - WG*gain_intervention - WRF* reward_finish) 
+        
         #test
         #if action[0]<1:
          #   reward -= 10
-
-        if not PRINT:
-            print("Current step = %d start_time = %d Reward %f cost of start = %f cost of continueing = %f gain from int = %f gain from finish reward = %d"%(self.current_step,self.start_time,reward,WCS*cost_start, WCI*cost_intervention,WG* gain_intervention,WRF* reward_finish))
+        if self.current_step!=self.start+INTERVENTION_DAYS:
+            reward = 0
+        self.cumulative_reward +=reward
+        if  PRINT2:
+            print("Current step = %d start_time = %d Reward %f cost of start = %f cost of continueing = %f cost of infected = %f gain from int = %f gain from finish reward = %d"%(self.current_step,self.start_time,reward,WCS*cost_start, WCI*cost_intervention,WI*cost_of_infected,WG* gain_intervention,WRF* reward_finish))
         self.current_step += 1
 
+        if done:
+            self.render()
         return obs, reward, done, {}
+
+
+    def get_cost_of_infected(self):
+        if self.start_time==-1:
+            self.cumulative_infected_cost += self.df['Infected'][self.current_step]*100
+            return self.df['Infected'][self.current_step]*100
+        else:
+            return 0
 
     def set_step(self):
         print("Resetting current_step")
@@ -501,7 +553,7 @@ class EpidemicInterventionEnv(gym.Env):
         if PRINT:
             print("reset**************************")
         # Reset the state of the environment to an initial state
-        
+        self.cumulative_infected_cost = 0 
         self.area_under_curve_diff = 0
         self.total_interventions = 0
         self.beta=0.1
@@ -510,18 +562,21 @@ class EpidemicInterventionEnv(gym.Env):
         self.df = pd.read_csv('./data/epidemic_2.csv')
         self.df['Date_new'] = pd.to_datetime(self.df['Date'], format='%d-%m-%Y')
         self.df = self.df.sort_values('Date_new')
-        
+        self.cumulative_reward = 0
         #Set the current step to a random point within the data frame
-        #self.current_step = random.randint(
-         #   0, len(self.df.loc[:, 'Susceptible'].values) - 8)
+        self.current_step = random.randint(
+            0, len(self.df.loc[:, 'Susceptible'].values) - 8)
         self.total_interventions=0
-        self.current_step = 0
+        #self.current_step = 0
         self.start_time = -1
         self.end_time = -1
         self.start_outside_intervention = 0
         self.intervention_started = False
         self.intervention_list=[]
         self.max_intervention_reached = False
+        self.start =-1
+        print("Reset current step %d"%(self.current_step))
+
         return self._next_observation()
 
     def render(self, mode='human', close=False):
@@ -538,4 +593,4 @@ class EpidemicInterventionEnv(gym.Env):
         print("Old area under curve : %f New area under curve : %f Diff in area under curve : %f"%(INIT_AREA_UNDER_CURVE,new_area_under_curve,INIT_AREA_UNDER_CURVE-new_area_under_curve))
         
         print("Intervention list : ",self.intervention_list)
-        return self.df
+        return self.df,(self.intervention_list,new_peak_day-INIT_PEAK_DAY,INIT_PEAK-new_peak,INIT_AREA_UNDER_CURVE-new_area_under_curve,self.cumulative_reward)
