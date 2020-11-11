@@ -32,3 +32,5 @@ To optimise hyperparameters for PPO and DQN, rl-baselines-zoo can be used as fol
 python train.py --algo ppo2 --env epidemiological-env-v0  --n-trials 1000 -n 50000  --sampler random --pruner median -optimize
 
 python train.py --algo dqn --env epidemiological-env-v0  --n-trials 1000 -n 50000  --sampler random --pruner median -optimize
+
+Next step : Generalised framework which allows easy addition of new scenarios
