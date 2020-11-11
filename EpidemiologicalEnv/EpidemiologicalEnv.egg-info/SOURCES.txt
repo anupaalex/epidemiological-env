@@ -1,0 +1,7 @@
+README.md
+setup.py
+EpidemiologicalEnv.egg-info/PKG-INFO
+EpidemiologicalEnv.egg-info/SOURCES.txt
+EpidemiologicalEnv.egg-info/dependency_links.txt
+EpidemiologicalEnv.egg-info/requires.txt
+EpidemiologicalEnv.egg-info/top_level.txt
