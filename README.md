@@ -2,16 +2,27 @@
 A custom OpenAI gym environment for optimising interventions during an epidemic.
 
 After downloading the project files, go to the EpidemicInterventionEnv folder 
+
 Make sure you have python 3.7 installed
+
 pip install -r requirements.txt 
+
 run pip install --editable . 
+
 These are the various scenarios which can be set in the init function of the environment( ToDo: Pass it during initialisation)
+
 age_based =True
-capacity_based = False     
+
+capacity_based = False  
+
 increase_bed = False
+
 reduce_compliance = False
+
 economic_budget_based = False
+
 increase_peak_days = False
+
 reduce_total_infected = True
  
 Example for running this environment is in main.py which has code for using it for a custom made DQN and also DQN and PPO2 from stable baselines
