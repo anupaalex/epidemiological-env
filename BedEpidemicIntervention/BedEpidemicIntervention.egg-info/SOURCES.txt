@@ -1,7 +1,0 @@
-README.md
-setup.py
-BedEpidemicIntervention.egg-info/PKG-INFO
-BedEpidemicIntervention.egg-info/SOURCES.txt
-BedEpidemicIntervention.egg-info/dependency_links.txt
-BedEpidemicIntervention.egg-info/requires.txt
-BedEpidemicIntervention.egg-info/top_level.txt
